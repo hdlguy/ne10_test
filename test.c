@@ -24,6 +24,7 @@ int main()
     const int OS = 4;
     const int Ndata = 65536; // length of complex baseband data record.
     const int Nsearch_fft = 16384;  // the size of the fft used for correlation must be at least twice as long as the data which is 8K.
+    FILE* fp;
 
     clock_t time0, time1;
     double exec_time;
@@ -37,14 +38,16 @@ int main()
     printf("computing C/A sequences.\n");
     for (int sv=1; sv<Nsv; sv++) cacode(sv, OS, ca_seq[sv]);
 
+    //for (int i=0; i<10*OS; i++) printf("%+d,",ca_seq[1][i]); printf("\n");
+    
     // convert to bpsk floats
     for (int sv=1; sv<Nsv; sv++){
         for (int i=0; i<1023*OS; i++){
             if (ca_seq[sv][i] == 0) {
-                ca_float[sv][i].r = -1.0; 
+                ca_float[sv][i].r = +1.0; 
                 ca_float[sv][i].i =  0.0; 
             } else {
-                ca_float[sv][i].r = +1.0;
+                ca_float[sv][i].r = -1.0;
                 ca_float[sv][i].i =  0.0;
             }
         }
@@ -53,6 +56,8 @@ int main()
             ca_float[sv][i].i = 0.0;
         }
     }
+
+    //for (int i=0; i<10*OS; i++) printf("%+2.1f,",ca_float[2][i].r); printf("\n");
 
     // Initialise Ne10, using hardware auto-detection to set library function pointers
     if (ne10_init() != NE10_OK) {
@@ -71,6 +76,10 @@ int main()
         ne10_fft_c2c_1d_float32_c(CA_float[sv], ca_float[sv], search_fft_cfg, 0);   // fft
         for (int i=0; i<Nsearch_fft; i++) CA_float[sv][i].i *= -1.0;                // complex conjugate.
     }
+
+    fp = fopen("CA_float.dat","w");
+    for (int i=0; i<Nsearch_fft; i++) fprintf(fp, "%f  %f\n", CA_float[1][i].r,CA_float[1][i].i);
+    fclose(fp);
 
     // compute table of doppler frequencies
     const int Ndopp = 41;
@@ -105,7 +114,6 @@ int main()
 
     // read in the baseband data, 64K samples. 8k samples are used in search. 64k are used for refined doppler calculation.
     printf("reading the ADC data\n");
-    FILE* fp;
     fp = fopen("dataout.txt","r");
     ne10_fft_cpx_float32_t s_full[Ndata]; // holds the full length complex baseband data for doppler refinement.
     for (int i=0; i<Ndata; i++) {
@@ -181,9 +189,7 @@ int main()
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
     printf("\nsearch time = %lf\n", exec_time);
 
-    for (int sv=1; sv<Nsv; sv++) {
-        printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
-    }
+    for (int sv=1; sv<Nsv; sv++) printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
 
     free(ca_float);
     free(ca_seq);
