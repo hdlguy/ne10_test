@@ -43,9 +43,9 @@ int main()
         }
     }
 
-/*
     if (ne10_init() != NE10_OK) { fprintf(stderr, "Failed to initialise Ne10.\n"); return 1; }
 
+/*
     ne10_fft_cfg_float32_t search_fft_cfg;
     search_fft_cfg = ne10_fft_alloc_c2c_float32_c(Nsearch_fft);
     
