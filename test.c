@@ -24,6 +24,8 @@ int main()
     const int OS = 4;
     const int Ndata = 65536; // length of complex baseband data record.
     const int Nsearch_fft = 16384;  // the size of the fft used for correlation must be at least twice as long as the data which is 8K.
+    const float Fs = 4.0*1.023e6;
+    const float thresh = 1600.0;
     FILE* fp;
 
     clock_t time0, time1;
@@ -81,7 +83,6 @@ int main()
 
     // compute table of doppler frequencies
     const int Ndopp = 41;
-    const float Fs = 4.0*1.023e6;
     const float Dopp_start = -4000.0;
     const float Dopp_step  = 200.0;
     float dopp_index[Ndopp];
@@ -195,7 +196,9 @@ int main()
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
     printf("\nsearch time = %lf\n", exec_time);
 
-    for (int sv=1; sv<Nsv; sv++) printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
+    for (int sv=1; sv<Nsv; sv++) {
+        if (max_peak[sv].val > thresh) printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
+    }
 
     free(ca_float);
     free(ca_seq);
