@@ -30,14 +30,13 @@ int main()
     time0 = clock();
 
 
-    ne10_fft_cpx_float32_t (*ca_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t));
-    ne10_fft_cpx_float32_t (*CA_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t));
-    uint8_t (*ca_seq)[1023*OS]=malloc(Nsv*1023*OS*sizeof(uint8_t ));
+    ne10_fft_cpx_float32_t (*ca_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t)); // ca_float[Nsv][Nsearch_fft]
+    ne10_fft_cpx_float32_t (*CA_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t)); // CA_float[Nsv][Nsearch_fft]
+    uint8_t (*ca_seq)[1023*OS]=malloc(Nsv*1023*OS*sizeof(uint8_t ));                                        // ca_seq[Nsv][1023*OS]
 
     printf("computing C/A sequences.\n");
-    for (int sv=1; sv<Nsv; sv++){
-        cacode(sv, OS, ca_seq[sv]);
-    }
+    for (int sv=1; sv<Nsv; sv++) cacode(sv, OS, ca_seq[sv]);
+
     // convert to bpsk floats
     for (int sv=1; sv<Nsv; sv++){
         for (int i=0; i<1023*OS; i++){
@@ -68,8 +67,9 @@ int main()
     search_fft_cfg = ne10_fft_alloc_c2c_float32_c(Nsearch_fft);
 
     printf("computing C/A fft's\n");
-    for (int sv=1; sv<Nsv; sv++){
-        ne10_fft_c2c_1d_float32_c(CA_float[sv], ca_float[sv], search_fft_cfg, 0);
+    for (int sv=1; sv<Nsv; sv++) {
+        ne10_fft_c2c_1d_float32_c(CA_float[sv], ca_float[sv], search_fft_cfg, 0);   // fft
+        for (int i=0; i<Nsearch_fft; i++) CA_float[sv][i].i *= -1.0;                // complex conjugate.
     }
 
     // compute table of doppler frequencies
@@ -83,7 +83,7 @@ int main()
     printf("computing the array of doppler mix vectors\n");
     ne10_fft_cpx_float32_t mix[Ndopp][Nsearch_fft/2];
     for (int k=0; k<Ndopp; k++) {
-        printf("computing mix vector for Doppler = %lf\n", dopp_index[k]);
+        //printf("computing mix vector for Doppler = %lf\n", dopp_index[k]);
         // compute the complex sinusiod at the negative of the doppler.
         float phase;
         for (int i=0; i<Nsearch_fft/2; i++){
@@ -103,8 +103,6 @@ int main()
     // *******************
 
 
-    time0 = clock();
-
     // read in the baseband data, 64K samples. 8k samples are used in search. 64k are used for refined doppler calculation.
     printf("reading the ADC data\n");
     FILE* fp;
@@ -118,6 +116,8 @@ int main()
     }
     fclose(fp);
 
+    time0 = clock();
+
     ne10_fft_cpx_float32_t s[Nsearch_fft/2]; // holds the 8K length complex baseband data for search.
     for (int i=0; i<Nsearch_fft/2; i++) {
         s[i] = s_full[i];
@@ -128,7 +128,7 @@ int main()
     printf("looping over the doppler bins.\n");
     for (int k=0; k<Ndopp; k++) {
 
-        printf("Doppler = %lf\n", dopp_index[k]);
+        printf("\r%8.2lf", dopp_index[k] ); fflush(stdout);
 
         // compute the dot product to wipe of the doppler and zero pad.
         ne10_fft_cpx_float32_t s_mix[Nsearch_fft];
@@ -144,7 +144,7 @@ int main()
         ne10_fft_c2c_1d_float32_c(S_mix, s_mix, search_fft_cfg, 0);
 
         // loop over the SV computing the dot product of the frequency domain of the signal and C/A code. Then take the ifft().
-        for (int SV=1; SV<Nsv; SV++) {
+        for (int sv=1; sv<Nsv; sv++) {
 
             // multiply the frequency domain representations of the signal and the ca code.
             ne10_fft_cpx_float32_t S_corr[Nsearch_fft];
@@ -157,14 +157,33 @@ int main()
             ne10_fft_c2c_1d_float32_c(s_corr, S_corr, search_fft_cfg, 1); 
 
             // find the peak of the absolute value, save value and index.
-            peak_array[SV][k] = sat_peak_find(s_corr, Nsearch_fft/2);
+            peak_array[sv][k] = sat_peak_find(s_corr, Nsearch_fft/2);
 
+        }
+    }
+
+    // Now we have the correlation peak for each SV and each doppler bin.
+    // For each SV wee need to find the doppler bin with the max correlation
+    // and save a list of the SV that meet threshold.
+    struct sat_peak_struct max_peak[Nsv];
+    for (int sv=1; sv<Nsv; sv++) {
+        max_peak[sv].val = 0.0;
+        max_peak[sv].loc = 0;
+        for (int k=0; k<Ndopp; k++) {
+            if (peak_array[sv][k].val > max_peak[sv].val) {
+                max_peak[sv].val = peak_array[sv][k].val;
+                max_peak[sv].loc = peak_array[sv][k].loc;
+            }
         }
     }
 
     time1 = clock();
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
-    printf("search time = %lf\n", exec_time);
+    printf("\nsearch time = %lf\n", exec_time);
+
+    for (int sv=1; sv<Nsv; sv++) {
+        printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
+    }
 
     free(ca_float);
     free(ca_seq);
