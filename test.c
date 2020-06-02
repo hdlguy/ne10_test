@@ -40,9 +40,9 @@ int main()
 
     //for (int i=0; i<10*OS; i++) printf("%+d,",ca_seq[1][i]); printf("\n");
     
-    // convert to bpsk floats
+    // convert to bpsk floats and zero pad
     for (int sv=1; sv<Nsv; sv++){
-        for (int i=0; i<1023*OS; i++){
+        for (int i=0; i<1023*OS; i++){     // convert to bpsk, 0 -> +1.0, 1 -> -1.0
             if (ca_seq[sv][i] == 0) {
                 ca_float[sv][i].r = +1.0; 
                 ca_float[sv][i].i =  0.0; 
@@ -51,7 +51,7 @@ int main()
                 ca_float[sv][i].i =  0.0;
             }
         }
-        for (int i=1023*OS; i<Nsearch_fft; i++){
+        for (int i=1023*OS; i<Nsearch_fft; i++){ // zero pad
             ca_float[sv][i].r = 0.0;
             ca_float[sv][i].i = 0.0;
         }
@@ -77,17 +77,18 @@ int main()
         for (int i=0; i<Nsearch_fft; i++) CA_float[sv][i].i *= -1.0;                // complex conjugate.
     }
 
-    fp = fopen("CA_float.dat","w");
-    for (int i=0; i<Nsearch_fft; i++) fprintf(fp, "%f  %f\n", CA_float[1][i].r,CA_float[1][i].i);
-    fclose(fp);
+    //fp = fopen("CA_float.dat","w"); for (int i=0; i<Nsearch_fft; i++) fprintf(fp, "%f  %f\n", CA_float[1][i].r,CA_float[1][i].i); fclose(fp);
 
     // compute table of doppler frequencies
     const int Ndopp = 41;
+    const float Fs = 4.0*1.023e6;
     const float Dopp_start = -4000.0;
     const float Dopp_step  = 200.0;
     float dopp_index[Ndopp];
     printf("creating table of doppler frequencies\n");
     for (int i=0; i<Ndopp; i++) dopp_index[i] = Dopp_start + i*Dopp_step;
+
+    //for (int i=0; i<Ndopp; i++) printf("%+f\n", dopp_index[i]);
 
     printf("computing the array of doppler mix vectors\n");
     ne10_fft_cpx_float32_t mix[Ndopp][Nsearch_fft/2];
@@ -96,11 +97,13 @@ int main()
         // compute the complex sinusiod at the negative of the doppler.
         float phase;
         for (int i=0; i<Nsearch_fft/2; i++){
-            phase = -2.0*M_PI*dopp_index[k]*i;  // -2*pi*f*i
+            phase = -2.0*M_PI*(dopp_index[k]/Fs)*i;  // -2*pi*f*i
             mix[k][i].r = cos(phase);
             mix[k][i].i = sin(phase);
         }
     }
+
+    //fp = fopen("mix.dat","w"); for (int i=0; i<Nsearch_fft/2; i++) fprintf(fp, "%f  %f\n", mix[25][i].r,mix[25][i].i); fclose(fp);
 
     time1 = clock();
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
@@ -138,27 +141,21 @@ int main()
 
         printf("\r%8.2lf", dopp_index[k] ); fflush(stdout);
 
-        // compute the dot product to wipe of the doppler and zero pad.
+        // compute the dot product to mix off the doppler, then zero pad.
         ne10_fft_cpx_float32_t s_mix[Nsearch_fft];
-        for (int i=0; i<Nsearch_fft/2; i++){
-            s_mix[i] = cpx_mul(s[i], mix[k][i]);  // multiply
-        }
-        for (int i=Nsearch_fft/2; i<Nsearch_fft; i++){
-            s_mix[i].r = 0.0; s_mix[i].i = 0.0;  // zero pad
-        }
+        for (int i=0; i<Nsearch_fft/2; i++)            {s_mix[i] = cpx_mul(s[i], mix[k][i]);}   // multiply
+        for (int i=Nsearch_fft/2; i<Nsearch_fft; i++)  {s_mix[i].r = 0.0; s_mix[i].i = 0.0;}    // zero pad
 
         // convert mixed adc data to frequency domain.
         ne10_fft_cpx_float32_t S_mix[Nsearch_fft];
         ne10_fft_c2c_1d_float32_c(S_mix, s_mix, search_fft_cfg, 0);
 
-        // loop over the SV computing the dot product of the frequency domain of the signal and C/A code. Then take the ifft().
+        // loop over the SV computing the dot product of the frequency domain of the signal and C/A code. Then take the ifft() and find the peak.
         for (int sv=1; sv<Nsv; sv++) {
 
             // multiply the frequency domain representations of the signal and the ca code.
             ne10_fft_cpx_float32_t S_corr[Nsearch_fft];
-            for (int i=0; i<Nsearch_fft; i++){
-                S_corr[i] = cpx_mul(S_mix[i], CA_float[k][i]);  // complex multiply
-            }
+            for (int i=0; i<Nsearch_fft; i++)   S_corr[i] = cpx_mul(S_mix[i], CA_float[sv][i]);  // complex multiply
 
             // take the inverse fft
             ne10_fft_cpx_float32_t s_corr[Nsearch_fft];
@@ -169,6 +166,15 @@ int main()
 
         }
     }
+
+    fp = fopen("peak.dat","w"); 
+    for (int sv=1; sv<Nsv; sv++) {
+        for (int k=0; k<Ndopp; k++) {
+            fprintf(fp, "%f ", peak_array[sv][k].val);
+        } 
+        fprintf(fp, "\n");
+    }
+    fclose(fp);
 
     // Now we have the correlation peak for each SV and each doppler bin.
     // For each SV wee need to find the doppler bin with the max correlation
