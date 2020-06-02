@@ -1,14 +1,13 @@
 
 If cross compiling you need this. 
 sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+export NE10_LINUX_TARGET_ARCH=aarch64
 
 cd ~/github
 git clone https://github.com/projectNe10/Ne10.git
 
 cd Ne10/
 mkdir build && cd build
-
-export NE10_LINUX_TARGET_ARCH=aarch64
 
 cmake -DCMAKE_TOOLCHAIN_FILE=../GNUlinux_config.cmake ..
 
