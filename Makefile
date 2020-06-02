@@ -8,7 +8,7 @@ CFLAGS=-I. -I$(NE10LOC)/inc -Wall
 
 DEPS = Makefile 
 
-test: test.o cacode.o
+test: test.o cacode.o sat_peak_find.o
 # $@: target file name, $^: all prerequisites
 	$(CC) -g -o $@ $^ -L$(NE10LOC)/build/modules/ -lNE10 -lm
 

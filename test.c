@@ -20,6 +20,16 @@ ne10_fft_cpx_float32_t cpx_mul(ne10_fft_cpx_float32_t a, ne10_fft_cpx_float32_t 
 int main()
 {
 
+    const int Nsv = 34;
+    const int OS = 4;
+    const int Ndata = 65536; // length of complex baseband data record.
+    const int Nsearch_fft = 16384;  // the size of the fft used for correlation must be at least twice as long as the data which is 8K.
+
+    clock_t time0, time1;
+    double exec_time;
+    time0 = clock();
+
+
     ne10_fft_cpx_float32_t (*ca_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t));
     ne10_fft_cpx_float32_t (*CA_float)[Nsearch_fft]=malloc(Nsv*Nsearch_fft*sizeof(ne10_fft_cpx_float32_t));
     uint8_t (*ca_seq)[1023*OS]=malloc(Nsv*1023*OS*sizeof(uint8_t ));
@@ -83,14 +93,23 @@ int main()
         }
     }
 
+    time1 = clock();
+    exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
+    printf("initialization time = %lf\n", exec_time);
 
-    // now we have the correlation templates converted to frequency domain.  All this could be done offline in advance.
+
+    // *******************
+    //  Everything until this point could be done offline in advance.
+    // *******************
+
+
+    time0 = clock();
 
     // read in the baseband data, 64K samples. 8k samples are used in search. 64k are used for refined doppler calculation.
     printf("reading the ADC data\n");
     FILE* fp;
     fp = fopen("dataout.txt","r");
-    ne10_fft_cpx_float32_t s_full[Ndata]; // holds the full length complex baseband data.
+    ne10_fft_cpx_float32_t s_full[Ndata]; // holds the full length complex baseband data for doppler refinement.
     for (int i=0; i<Ndata; i++) {
         int rsamp, isamp;
         fscanf(fp, "%d, %d\n", &rsamp, &isamp);
@@ -99,12 +118,13 @@ int main()
     }
     fclose(fp);
 
-    ne10_fft_cpx_float32_t s[Nsearch_fft/2]; // holds the 8K length complex baseband data.
+    ne10_fft_cpx_float32_t s[Nsearch_fft/2]; // holds the 8K length complex baseband data for search.
     for (int i=0; i<Nsearch_fft/2; i++) {
         s[i] = s_full[i];
     }
 
     // loop over the doppler table computing correlations
+    struct sat_peak_struct peak_array[Nsv][Ndopp]; 
     printf("looping over the doppler bins.\n");
     for (int k=0; k<Ndopp; k++) {
 
@@ -137,10 +157,14 @@ int main()
             ne10_fft_c2c_1d_float32_c(s_corr, S_corr, search_fft_cfg, 1); 
 
             // find the peak of the absolute value, save value and index.
+            peak_array[SV][k] = sat_peak_find(s_corr, Nsearch_fft/2);
 
         }
     }
 
+    time1 = clock();
+    exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
+    printf("search time = %lf\n", exec_time);
 
     free(ca_float);
     free(ca_seq);
