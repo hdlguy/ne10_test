@@ -1,5 +1,5 @@
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdint.h>
 #include "NE10.h"
 #include <math.h>
@@ -16,6 +16,7 @@ ne10_fft_cpx_float32_t cpx_mul(ne10_fft_cpx_float32_t a, ne10_fft_cpx_float32_t 
     return(temp);
 }
 
+int peak_compare(const void * a, const void * b){ if(((peak_t *)b)->val > ((peak_t *)a)->val) return(1); else return(0); }
 
 int main()
 {
@@ -69,7 +70,7 @@ int main()
         printf("NE10_OK\n");
     }
 
-    printf("configuring search fft\n");
+    printf("computing fft twiddle factors\n");
     ne10_fft_cfg_float32_t search_fft_cfg;
     search_fft_cfg = ne10_fft_alloc_c2c_float32_c(Nsearch_fft);
 
@@ -136,7 +137,7 @@ int main()
     }
 
     // loop over the doppler table computing correlations
-    struct sat_peak_struct peak_array[Nsv][Ndopp]; 
+    peak_t peak_array[Nsv][Ndopp]; 
     printf("looping over the doppler bins.\n");
     for (int k=0; k<Ndopp; k++) {
 
@@ -180,25 +181,47 @@ int main()
     // Now we have the correlation peak for each SV and each doppler bin.
     // For each SV wee need to find the doppler bin with the max correlation
     // and save a list of the SV that meet threshold.
-    struct sat_peak_struct max_peak[Nsv];
+    peak_t max_peak[Nsv];
+    max_peak[0].val = 0.0; max_peak[0].loc = 0;
+    int num_sat = 0;
     for (int sv=1; sv<Nsv; sv++) {
-        max_peak[sv].val = 0.0;
-        max_peak[sv].loc = 0;
+        max_peak[sv].val = 0.0; max_peak[sv].loc = 0; max_peak[sv].sv = sv;
         for (int k=0; k<Ndopp; k++) {
             if (peak_array[sv][k].val > max_peak[sv].val) {
                 max_peak[sv].val = peak_array[sv][k].val;
                 max_peak[sv].loc = peak_array[sv][k].loc;
             }
         }
+        if (max_peak[sv].val > thresh) num_sat++;
     }
 
     time1 = clock();
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
     printf("\nsearch time = %lf\n", exec_time);
 
-    for (int sv=1; sv<Nsv; sv++) {
-        if (max_peak[sv].val > thresh) printf("SV=%3d, max val = %5.2f, max loc = %5d\n", sv, max_peak[sv].val, max_peak[sv].loc); 
+    qsort(max_peak, (size_t)Nsv, sizeof(peak_t), peak_compare);
+
+    printf("num_sat = %d\n", num_sat);
+    for (int sv=0; sv<Nsv; sv++) {
+        if (max_peak[sv].val > thresh) {
+            printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
+        }
     }
+
+
+    // **********************
+    // Now the list of visible satellites is known with their code delay offsets. We can use this to get a refined doppler estimate.
+    // *********************
+
+    // Refined doppler is found by first de-spreading the data with the code delay for each PRN in the list.
+    // Then a 64K point fft can be computed to determine the doppler. 64K samples = 16ms. 1/16ms = 60Hz fft resolution so error should be in the range -30Hz to +30Hz.
+    //
+    // For each SV in the list, replicate the ca sequence to be longer than 64K plus the max shift value of 4092.
+    // Then compute the dot product of the raw data (64K samples) with the portion of that long sequence corresponding to the code shift.
+    // Then take the FFT and find the frequency bin with the highest absolute value. That bin corresponds to the exact doppler of the SV.
+    int Nrep = 1+Ndata/(1023*OS);
+    printf("Nrep = %d\n", Nrep);
+
 
     free(ca_float);
     free(ca_seq);

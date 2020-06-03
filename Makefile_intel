@@ -6,7 +6,7 @@ NE10LOC=/home/pedro/github/hdlguy_Ne10
 CC=gcc
 CFLAGS=-I. -I$(NE10LOC)/inc -Wall
 
-DEPS = Makefile 
+DEPS = Makefile sat_search.h
 
 test: test.o cacode.o sat_peak_find.o
 # $@: target file name, $^: all prerequisites
