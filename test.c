@@ -73,6 +73,8 @@ int main()
     printf("computing fft twiddle factors\n");
     ne10_fft_cfg_float32_t search_fft_cfg;
     search_fft_cfg = ne10_fft_alloc_c2c_float32_c(Nsearch_fft);
+    ne10_fft_cfg_float32_t long_fft_cfg;
+    long_fft_cfg = ne10_fft_alloc_c2c_float32_c(Ndata);
 
     printf("computing C/A fft's\n");
     for (int sv=1; sv<Nsv; sv++) {
@@ -199,14 +201,10 @@ int main()
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
     printf("\nsearch time = %lf\n", exec_time);
 
-    qsort(max_peak, (size_t)Nsv, sizeof(peak_t), peak_compare);
+    qsort(max_peak, (size_t)Nsv, sizeof(peak_t), peak_compare);  // sort list of satellites by strength. the first num_sat entries are the SV found.
 
     printf("num_sat = %d\n", num_sat);
-    for (int sv=0; sv<Nsv; sv++) {
-        if (max_peak[sv].val > thresh) {
-            printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
-        }
-    }
+    for (int sv=0; sv<Nsv; sv++) if (max_peak[sv].val > thresh) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
 
 
     // **********************
@@ -219,8 +217,24 @@ int main()
     // For each SV in the list, replicate the ca sequence to be longer than 64K plus the max shift value of 4092.
     // Then compute the dot product of the raw data (64K samples) with the portion of that long sequence corresponding to the code shift.
     // Then take the FFT and find the frequency bin with the highest absolute value. That bin corresponds to the exact doppler of the SV.
-    int Nrep = 1+Ndata/(1023*OS);
-    printf("Nrep = %d\n", Nrep);
+    printf("computing refined doppler estimate\n");
+    const int Nrep = 2+Ndata/(1023*OS);
+    int8_t ca_long_seq[Nrep*1023*OS];
+    ne10_fft_cpx_float32_t s_despread[Ndata];
+    for (int i=0; i<num_sat; i++){
+        // fill in the first copy of the ca sequence
+        for (int j=0; j<1023*OS; j++) if (ca_seq[max_peak[i].sv][j]==1) ca_long_seq[j] = -1; else ca_long_seq[j] = +1;
+        // fill in the rest of the long sequence
+        for (int k=1; k<Nrep; k++) for (int j=0; j<1023*OS; j++) ca_long_seq[k*1023*OS+j] = ca_long_seq[j];
+        // de-spread
+        for (int j=0; j<Ndata; j++) {
+            s_despread[j].r = s_full[j].r*ca_long_seq[j+max_peak[i].loc];
+            s_despread[j].i = s_full[j].i*ca_long_seq[j+max_peak[i].loc];
+        }
+        // calculate fft
+
+        // find peak and convert to Hz
+    }
 
 
     free(ca_float);
