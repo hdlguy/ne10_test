@@ -121,8 +121,8 @@ int main()
 
     // read in the baseband data, 64K samples. 8k samples are used in search. 64k are used for refined doppler calculation.
     printf("reading the ADC data\n");
-    //fp = fopen("dataout.txt","r");
-    fp = fopen("syn.txt","r");
+    fp = fopen("dataout.txt","r");
+    //fp = fopen("syn.txt","r");
     ne10_fft_cpx_float32_t s_full[Ndata]; // holds the full length complex baseband data for doppler refinement.
     for (int i=0; i<Ndata; i++) {
         int rsamp, isamp;
@@ -202,8 +202,9 @@ int main()
 
     qsort(max_peak, (size_t)Nsv, sizeof(peak_t), peak_compare);  // sort list of satellites by strength. the first num_sat entries are the SV found.
 
-    printf("num_sat = %d\n", num_sat);
-    for (int sv=0; sv<Nsv; sv++) if (max_peak[sv].val > thresh) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
+    printf("\nnum_sat = %d\n", num_sat);
+    //for (int sv=0; sv<Nsv; sv++) if (max_peak[sv].val > thresh) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
+    for (int sv=0; sv<num_sat; sv++) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc);
 
 
     // **********************
@@ -226,10 +227,20 @@ int main()
         // fill in the rest of the long sequence
         for (int k=1; k<Nrep; k++) for (int j=0; j<1023*OS; j++) ca_long_seq[k*1023*OS+j] = ca_long_seq[j];
         // de-spread
+        int seq_shift = 1023*OS - max_peak[i].loc;
         for (int j=0; j<Ndata; j++) {
-            s_despread[j].r = s_full[j].r * ca_long_seq[j+max_peak[i].loc];
-            s_despread[j].i = s_full[j].i * ca_long_seq[j+max_peak[i].loc];
+            s_despread[j].r = s_full[j].r * ca_long_seq[j+seq_shift];
+            s_despread[j].i = s_full[j].i * ca_long_seq[j+seq_shift];
         }
+/*
+if (i==0) {
+    fp = fopen("despread.dat","w"); 
+    for (int j=0; j<Ndata; j++) {
+        fprintf(fp, "%f  %f  %d\n", s_full[j].r, s_full[j].i, ca_long_seq[j+seq_shift]);
+    } 
+    fclose(fp); 
+}
+*/
         // calculate the fft
         ne10_fft_c2c_1d_float32_c(S_despread, s_despread, long_fft_cfg, 0); // 64K fft
         // find the peak and convert to Hz
@@ -245,11 +256,7 @@ int main()
 
     for (int i=0; i<num_sat; i++) printf("%3d: .sv = %3d,  .val = %+6.2f,  .dop = %+6.2f\n", i, max_peak[i].sv, max_peak[i].val, max_peak[i].dop);
 
-    fp = fopen("despread.dat","w"); 
-    for (int j=0; j<Ndata; j++) {
-        fprintf(fp, "%f  %f  %d\n", s_full[j].r, s_full[j].i, ca_long_seq[j+max_peak[0].loc]);
-    }
-    fclose(fp);
+
 
     free(ca_float);
     free(ca_seq);
