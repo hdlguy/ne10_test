@@ -121,7 +121,8 @@ int main()
 
     // read in the baseband data, 64K samples. 8k samples are used in search. 64k are used for refined doppler calculation.
     printf("reading the ADC data\n");
-    fp = fopen("dataout.txt","r");
+    //fp = fopen("dataout.txt","r");
+    fp = fopen("syn.txt","r");
     ne10_fft_cpx_float32_t s_full[Ndata]; // holds the full length complex baseband data for doppler refinement.
     for (int i=0; i<Ndata; i++) {
         int rsamp, isamp;
@@ -171,6 +172,7 @@ int main()
         }
     }
 
+/*
     fp = fopen("peak.dat","w"); 
     for (int sv=1; sv<Nsv; sv++) {
         for (int k=0; k<Ndopp; k++) {
@@ -179,6 +181,7 @@ int main()
         fprintf(fp, "\n");
     }
     fclose(fp);
+*/
 
     // Now we have the correlation peak for each SV and each doppler bin.
     // For each SV wee need to find the doppler bin with the max correlation
@@ -224,8 +227,8 @@ int main()
         for (int k=1; k<Nrep; k++) for (int j=0; j<1023*OS; j++) ca_long_seq[k*1023*OS+j] = ca_long_seq[j];
         // de-spread
         for (int j=0; j<Ndata; j++) {
-            s_despread[j].r = s_full[j].r*ca_long_seq[j+max_peak[i].loc];
-            s_despread[j].i = s_full[j].i*ca_long_seq[j+max_peak[i].loc];
+            s_despread[j].r = s_full[j].r * ca_long_seq[j+max_peak[i].loc];
+            s_despread[j].i = s_full[j].i * ca_long_seq[j+max_peak[i].loc];
         }
         // calculate the fft
         ne10_fft_c2c_1d_float32_c(S_despread, s_despread, long_fft_cfg, 0); // 64K fft
@@ -241,6 +244,12 @@ int main()
     printf("\nsearch time = %lf\n", exec_time);
 
     for (int i=0; i<num_sat; i++) printf("%3d: .sv = %3d,  .val = %+6.2f,  .dop = %+6.2f\n", i, max_peak[i].sv, max_peak[i].val, max_peak[i].dop);
+
+    fp = fopen("despread.dat","w"); 
+    for (int j=0; j<Ndata; j++) {
+        fprintf(fp, "%f  %f  %d\n", s_full[j].r, s_full[j].i, ca_long_seq[j+max_peak[0].loc]);
+    }
+    fclose(fp);
 
     free(ca_float);
     free(ca_seq);
