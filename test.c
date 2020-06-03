@@ -82,7 +82,6 @@ int main()
         for (int i=0; i<Nsearch_fft; i++) CA_float[sv][i].i *= -1.0;                // complex conjugate.
     }
 
-    //fp = fopen("CA_float.dat","w"); for (int i=0; i<Nsearch_fft; i++) fprintf(fp, "%f  %f\n", CA_float[1][i].r,CA_float[1][i].i); fclose(fp);
 
     // compute table of doppler frequencies
     const int Ndopp = 41;
@@ -92,7 +91,6 @@ int main()
     printf("creating table of doppler frequencies\n");
     for (int i=0; i<Ndopp; i++) dopp_index[i] = Dopp_start + i*Dopp_step;
 
-    //for (int i=0; i<Ndopp; i++) printf("%+f\n", dopp_index[i]);
 
     printf("computing the array of doppler mix vectors\n");
     ne10_fft_cpx_float32_t mix[Ndopp][Nsearch_fft/2];
@@ -107,7 +105,6 @@ int main()
         }
     }
 
-    //fp = fopen("mix.dat","w"); for (int i=0; i<Nsearch_fft/2; i++) fprintf(fp, "%f  %f\n", mix[25][i].r,mix[25][i].i); fclose(fp);
 
     time1 = clock();
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
@@ -172,16 +169,7 @@ int main()
         }
     }
 
-/*
-    fp = fopen("peak.dat","w"); 
-    for (int sv=1; sv<Nsv; sv++) {
-        for (int k=0; k<Ndopp; k++) {
-            fprintf(fp, "%f ", peak_array[sv][k].val);
-        } 
-        fprintf(fp, "\n");
-    }
-    fclose(fp);
-*/
+
 
     // Now we have the correlation peak for each SV and each doppler bin.
     // For each SV wee need to find the doppler bin with the max correlation
@@ -203,12 +191,10 @@ int main()
     qsort(max_peak, (size_t)Nsv, sizeof(peak_t), peak_compare);  // sort list of satellites by strength. the first num_sat entries are the SV found.
 
     printf("\nnum_sat = %d\n", num_sat);
-    //for (int sv=0; sv<Nsv; sv++) if (max_peak[sv].val > thresh) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc); 
-    for (int sv=0; sv<num_sat; sv++) printf("SV = %3d, max val = %5.2f, max loc = %5d\n", max_peak[sv].sv, max_peak[sv].val, max_peak[sv].loc);
 
 
     // **********************
-    // Now the list of visible satellites is known with their code delay offsets. We can use this to get a refined doppler estimate.
+    // Now the list of visible satellites is known along with their code delay offsets. We can use this to get a refined doppler estimate.
     // *********************
 
     // Refined doppler is found by first de-spreading the data with the code delay for each PRN in the list.
@@ -216,46 +202,42 @@ int main()
     //
     // For each SV in the list, replicate the ca sequence to be longer than 64K plus the max shift value of 4092.
     // Then compute the dot product of the raw data (64K samples) with the portion of that long sequence corresponding to the code shift.
-    // Then take the FFT and find the frequency bin with the highest absolute value. That bin corresponds to the exact doppler of the SV.
+    // Then take the FFT and find the frequency bin with the highest absolute value. That bin corresponds to the precise doppler of the SV.
     printf("computing refined doppler estimate\n");
     const int Nrep = 2+Ndata/(1023*OS);
     int8_t ca_long_seq[Nrep*1023*OS];
     ne10_fft_cpx_float32_t s_despread[Ndata], S_despread[Ndata];
     for (int i=0; i<num_sat; i++){
+
         // fill in the first copy of the ca sequence
         for (int j=0; j<1023*OS; j++) if (ca_seq[max_peak[i].sv][j]==1) ca_long_seq[j] = -1; else ca_long_seq[j] = +1;
+
         // fill in the rest of the long sequence
         for (int k=1; k<Nrep; k++) for (int j=0; j<1023*OS; j++) ca_long_seq[k*1023*OS+j] = ca_long_seq[j];
+
         // de-spread
         int seq_shift = 1023*OS - max_peak[i].loc;
         for (int j=0; j<Ndata; j++) {
             s_despread[j].r = s_full[j].r * ca_long_seq[j+seq_shift];
             s_despread[j].i = s_full[j].i * ca_long_seq[j+seq_shift];
         }
-/*
-if (i==0) {
-    fp = fopen("despread.dat","w"); 
-    for (int j=0; j<Ndata; j++) {
-        fprintf(fp, "%f  %f  %d\n", s_full[j].r, s_full[j].i, ca_long_seq[j+seq_shift]);
-    } 
-    fclose(fp); 
-}
-*/
+
         // calculate the fft
         ne10_fft_c2c_1d_float32_c(S_despread, s_despread, long_fft_cfg, 0); // 64K fft
+
         // find the peak and convert to Hz
         peak_t fft_peak = sat_peak_find(S_despread, Ndata);
         int fft_loc_signed = ((fft_peak.loc + Ndata/2) % Ndata) - Ndata/2;
         ne10_float32_t freq = Fs*fft_loc_signed/Ndata;
         max_peak[i].dop = freq;
+
     }
 
     time1 = clock();
     exec_time = (double)(time1-time0)/CLOCKS_PER_SEC;
     printf("\nsearch time = %lf\n", exec_time);
 
-    for (int i=0; i<num_sat; i++) printf("%3d: .sv = %3d,  .val = %+6.2f,  .dop = %+6.2f\n", i, max_peak[i].sv, max_peak[i].val, max_peak[i].dop);
-
+    for (int i=0; i<num_sat; i++) printf("%3d: .sv = %3d,  .val = %6.2f,  .loc = %5d,  .dop = %+6.2f\n", i, max_peak[i].sv, max_peak[i].val, max_peak[i].loc, max_peak[i].dop);
 
 
     free(ca_float);
