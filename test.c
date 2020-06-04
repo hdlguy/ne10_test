@@ -197,7 +197,7 @@ int main()
     // Now the list of visible satellites is known along with their code delay offsets. We can use this to get a refined doppler estimate.
     // *********************
 
-    // Refined doppler is found by first de-spreading the data with the code delay for each PRN in the list.
+    // The refined doppler is found by first de-spreading the data with the code delay for each PRN in the list.
     // Then a 64K point fft can be computed to determine the doppler. 64K samples = 16ms. 1/16ms = 60Hz fft resolution so error should be in the range -30Hz to +30Hz.
     //
     // For each SV in the list, replicate the ca sequence to be longer than 64K plus the max shift value of 4092.
@@ -212,11 +212,11 @@ int main()
         // fill in the first copy of the ca sequence
         for (int j=0; j<1023*OS; j++) if (ca_seq[max_peak[i].sv][j]==1) ca_long_seq[j] = -1; else ca_long_seq[j] = +1;
 
-        // fill in the rest of the long sequence
+        // repeat that first copy to fill in the rest of the long sequence
         for (int k=1; k<Nrep; k++) for (int j=0; j<1023*OS; j++) ca_long_seq[k*1023*OS+j] = ca_long_seq[j];
 
-        // de-spread
-        int seq_shift = 1023*OS - max_peak[i].loc;
+        // de-spread by computing the dot product of the long ca sequence with the full length sample data.
+        int seq_shift = 1023*OS - max_peak[i].loc; // the shift taken from the correlations above.
         for (int j=0; j<Ndata; j++) {
             s_despread[j].r = s_full[j].r * ca_long_seq[j+seq_shift];
             s_despread[j].i = s_full[j].i * ca_long_seq[j+seq_shift];
@@ -225,7 +225,7 @@ int main()
         // calculate the fft
         ne10_fft_c2c_1d_float32_c(S_despread, s_despread, long_fft_cfg, 0); // 64K fft
 
-        // find the peak and convert to Hz
+        // find the peak and convert to Hz. This is the precise doppler of the SV.
         peak_t fft_peak = sat_peak_find(S_despread, Ndata);
         int fft_loc_signed = ((fft_peak.loc + Ndata/2) % Ndata) - Ndata/2;
         ne10_float32_t freq = Fs*fft_loc_signed/Ndata;
